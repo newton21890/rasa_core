@@ -48,12 +48,23 @@ class TrackerWithCachedStates(DialogueStateTracker):
                  ):
         super(TrackerWithCachedStates, self).__init__(
                 sender_id, slots, topics, default_topic, max_event_history)
+        self._states = None
         self._frozen_states = None
         self.domain = domain
 
+    def states(self):
+        # type: () -> List[Dict[Text, float]]
+        """Return the states of the tracker based on the logged events."""
+
+        if self._states is None:
+            self._states = self._generate_states()
+
+        return self._states
+
     def frozen_states(self):
         # type: () -> Tuple[frozenset, ...]
-        """Return the states of the tracker based on the logged events."""
+        """Return the frozen states of the tracker
+            based on the logged events."""
 
         # if don't have it cached, we use the domain to calculate the states
         # from the events
@@ -62,9 +73,10 @@ class TrackerWithCachedStates(DialogueStateTracker):
 
         return tuple(self._frozen_states)
 
-    def clear_frozen_states(self):
+    def clear_states(self):
         # type: () -> None
         """Reset the states."""
+        self._states = None
         self._frozen_states = None
 
     def init_copy(self):
@@ -79,11 +91,15 @@ class TrackerWithCachedStates(DialogueStateTracker):
                           self._max_event_history,
                           self.domain)
 
+    def _generate_states(self):
+        # type: () -> List[Dict[Text, float]]
+
+        return self.domain.states_for_tracker_history(self)
+
     def _calculate_frozen_states(self):
         # type: () -> deque
 
-        generated_states = self.domain.states_for_tracker_history(self)
-        return deque((frozenset(s) for s in generated_states))
+        return deque((frozenset(s) for s in self.states()))
 
     def copy(self):
         # type: () -> TrackerWithCachedStates
@@ -100,14 +116,23 @@ class TrackerWithCachedStates(DialogueStateTracker):
         for event in self.events:
             tracker.update(event, skip_states=True)
 
+        tracker._states = copy.copy(self._states)
         tracker._frozen_states = copy.copy(self._frozen_states)
 
         return tracker  # yields the final state
 
-    def _append_current_frozen_state(self):
+    def _pop_last_state(self):
+        # type: () -> None
+
+        self._states.pop()
+        self._frozen_states.pop()
+
+    def _append_current_state(self):
         # type: () -> None
 
         state = self.domain.get_active_states(self)
+
+        self._states.append(state)
         self._frozen_states.append(frozenset(state))
 
     def update(self, event, skip_states=False):
@@ -128,15 +153,16 @@ class TrackerWithCachedStates(DialogueStateTracker):
             if isinstance(event, ActionExecuted):
                 pass
             elif isinstance(event, ActionReverted):
-                self._frozen_states.pop()
+                self._pop_last_state()
+                self._pop_last_state()
             elif isinstance(event, UserUtteranceReverted):
-                self.clear_frozen_states()
+                self.clear_states()
             elif isinstance(event, Restarted):
-                self.clear_frozen_states()
+                self.clear_states()
             else:
-                self._frozen_states.pop()
+                self._pop_last_state()
 
-            self._append_current_frozen_state()
+            self._append_current_state()
 
 
 # define types

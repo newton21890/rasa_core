@@ -17,6 +17,7 @@ from builtins import str
 from rasa_core import utils
 from rasa_core.events import ActionExecuted
 from rasa_core.training.data import DialogueTrainingData
+from rasa_core.training.generator import TrackerWithCachedStates
 
 from rasa_core.actions.action import ACTION_LISTEN_NAME
 from rasa_core.domain import PREV_PREFIX
@@ -287,7 +288,11 @@ class TrackerFeaturizer(object):
             If use_intent_probabilities is False (default behaviour),
             pick the most probable intent out of all provided ones and
             set its probability to 1.0, while all the others to 0.0."""
-        states = domain.states_for_tracker_history(tracker)
+        if isinstance(tracker, TrackerWithCachedStates):
+            # tracker came from generator
+            states = tracker.states()
+        else:
+            states = domain.states_for_tracker_history(tracker)
 
         # during training we encounter only 1 or 0
         if not self.use_intent_probabilities and not is_binary_training:
